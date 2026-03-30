@@ -27,7 +27,9 @@ def root():
     return {"message": "Farm2Plane (Faturi)"}
 
 # app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
-
+"""
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", port=8000, reload=True, host="192.168.1.7")
+
+"""
