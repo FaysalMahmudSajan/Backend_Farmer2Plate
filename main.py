@@ -10,7 +10,7 @@ Base.metadata.create_all(engine)
 app = FastAPI(title="Farm2Plate (Faturi)")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://fatirbinabdullah.github.io/Farmer2Plate"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
