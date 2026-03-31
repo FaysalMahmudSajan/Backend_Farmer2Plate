@@ -1,5 +1,3 @@
-# schemas/order_item.py
-
 from pydantic import BaseModel
 
 class OrderItemCreate(BaseModel):

@@ -14,43 +14,35 @@ from schemas.order_item import OrderItemResponse
 from core.security import verify_password, create_access_token, get_current_admin
 from core.config import settings
 
-# অ্যাডমিন প্যানেলের জন্য API রাউটার
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-# ✅ অ্যাডমিন লগইন (Admin Login)
 @router.post("/login", response_model=AdminLoginResponse)
 def login_admin(data: AdminLogin, db: Session = Depends(get_db)):
-    # .env ফাইলে থাকা অ্যাডমিনের নাম্বারের সাথে মিলিয়ে চেক করা
+
     admin = db.query(User).filter(
         User.email == settings.ADMIN_EMAIL,
         User.role == "admin"
     ).first()
 
-    # অ্যাডমিন ডাটাবেসে না থাকলে বা পাসওয়ার্ড না মিললে
     if not admin or not (data.password == settings.ADMIN_PASSWORD):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # সফল লগইনে টোকেন তৈরি করা
     token = create_access_token(data={"user_id": admin.id, "role": admin.role})
 
     return {"access_token": token, "token_type": "bearer"}
 
 
-# ✅ সমস্ত ইউজার ম্যানেজ করা (শুধুমাত্র অ্যাডমিনের জন্য)
 @router.get("/users")
 def get_all_users(current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     return db.query(User).all()
 
-
-# ❌ যেকোনো ইউজারকে ডিলিট করা
 @router.delete("/user/{user_id}")
 def delete_user(user_id: int, current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # অ্যাডমিন নিজেকে ডিলিট করতে পারবে না
     if user.id == current_admin["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
     
@@ -59,31 +51,26 @@ def delete_user(user_id: int, current_admin=Depends(get_current_admin), db: Sess
     return {"message": "User deleted"}
 
 
-# 🛑 ইউজারের স্ট্যাটাস অন/অফ করা (ফ্রিজ/অ্যাক্টিভ করা)
 @router.put("/user/{user_id}/toggle-status")
 def toggle_user_status(user_id: int, current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # অ্যাডমিন নিজেকে ফ্রিজ করতে পারবে না
     if user.id == current_admin["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot freeze yourself")
     
-    # স্ট্যাটাস পরিবর্তন করা হচ্ছে (ট্রু থাকলে ফলস, ফলস থাকলে ট্রু)
     user.is_active = not user.is_active
     db.commit()
     db.refresh(user)
     return {"message": "User status updated", "is_active": user.is_active}
 
 
-# ✅ সমস্ত প্রোডাক্ট ম্যানেজ করা (শুধুমাত্র অ্যাডমিনের জন্য)
 @router.get("/products", response_model=list[ProductResponse])
 def get_all_products(current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     return db.query(Product).options(joinedload(Product.images)).all()
 
 
-# ❌ যেকোনো প্রোডাক্ট মুছে ফেলা
 @router.delete("/product/{product_id}")
 def delete_product(product_id: int, current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -94,8 +81,6 @@ def delete_product(product_id: int, current_admin=Depends(get_current_admin), db
     db.commit()
     return {"message": "Product deleted"}
 
-
-# ✅ সিস্টেমের সমস্ত অর্ডার এক সাথে দেখা (শুধুমাত্র অ্যাডমিনের জন্য)
 @router.get("/orders")
 def get_all_orders(current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     orders = db.query(Order).options(joinedload(Order.items)).all()
@@ -118,7 +103,6 @@ def get_all_orders(current_admin=Depends(get_current_admin), db: Session = Depen
     return response
 
 
-# ✏️ অর্ডারের স্ট্যাটাস পরিবর্তন করা (শুধুমাত্র অ্যাডমিনের জন্য)
 @router.put("/order/{order_id}/status")
 def update_order_status(order_id: int, body: dict, current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
     allowed = {"pending", "accepted", "shipped", "delivered"}

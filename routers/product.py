@@ -1,5 +1,3 @@
-# routers/product.py
-
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
