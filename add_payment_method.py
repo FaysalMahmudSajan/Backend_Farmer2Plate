@@ -8,6 +8,7 @@ db_path = os.path.join(os.path.dirname(__file__), 'database.db')
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 
+# Column আছে কিনা চেক করা
 cursor.execute("PRAGMA table_info(orders)")
 columns = [col[1] for col in cursor.fetchall()]
 
