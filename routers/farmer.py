@@ -15,7 +15,6 @@ from core.security import hash_password, verify_password, create_access_token, g
 from core.config import settings
 from core.email_helper import send_otp_email, generate_otp
 
-# প্রোফাইল পিকচার compress করার সেটিং
 MAX_AVATAR_SIZE = 400
 WEBP_QUALITY   = 82
 
@@ -25,13 +24,11 @@ def compress_avatar(file_bytes: bytes) -> bytes:
         img = Image.open(BytesIO(file_bytes))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
-        # Square crop (center)
         w, h = img.size
         min_side = min(w, h)
         left = (w - min_side) // 2
         top  = (h - min_side) // 2
         img = img.crop((left, top, left + min_side, top + min_side))
-        # Resize
         img = img.resize((MAX_AVATAR_SIZE, MAX_AVATAR_SIZE), Image.Resampling.LANCZOS)
         output = BytesIO()
         img.save(output, format="WEBP", quality=WEBP_QUALITY, optimize=True)
@@ -167,8 +164,6 @@ def get_farmer(farmer_id: int, db: Session = Depends(get_db), current_user: dict
     resp.has_profile_picture = bool(farmer.profile_picture_data)
     return resp
 
-
-# ✅ কৃষকের প্রোফাইল ডাটা আপডেট করা
 @router.put("/update/{farmer_id}", response_model=FarmerResponse)
 def update_farmer(farmer_id: int, data: FarmerUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != farmer_id and current_user.get("role") != "admin":
@@ -182,7 +177,6 @@ def update_farmer(farmer_id: int, data: FarmerUpdate, db: Session = Depends(get_
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
 
-    # রিকোয়েস্ট বডিতে শুধু যেসব ভ্যালু দেওয়া হয়েছে সেগুলোই আপডেট করা
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(farmer, key, value)
 
@@ -193,8 +187,6 @@ def update_farmer(farmer_id: int, data: FarmerUpdate, db: Session = Depends(get_
     resp.has_profile_picture = bool(farmer.profile_picture_data)
     return resp
 
-
-# ❌ কৃষকের অ্যাকাউন্ট পারমানেন্টলি ডিলিট করা
 @router.delete("/delete/{farmer_id}")
 def delete_farmer(farmer_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != farmer_id and current_user.get("role") != "admin":
@@ -213,8 +205,6 @@ def delete_farmer(farmer_id: int, db: Session = Depends(get_db), current_user: d
 
     return {"message": "Farmer deleted"}
 
-
-# 📷 কৃষকের প্রোফাইল পিকচার আপলোড — binary DB storage
 @router.post("/profile-picture/{farmer_id}")
 async def upload_farmer_profile_picture(
     farmer_id: int,
@@ -233,18 +223,15 @@ async def upload_farmer_profile_picture(
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
 
-    # ফাইল টাইপ ভ্যালিডেশন
     allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="শুধু JPEG, PNG, WebP, GIF অথবা BMP ফাইল আপলোড করতে পারবেন!")
 
     file_bytes = await file.read()
 
-    # ৫MB সীমা
     if len(file_bytes) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="ছবি সর্বোচ্চ ৫MB হতে পারবে!")
 
-    # PIL দিয়ে compress + WebP convert
     compressed = compress_avatar(file_bytes)
 
     farmer.profile_picture_data = compressed
@@ -253,8 +240,6 @@ async def upload_farmer_profile_picture(
 
     return {"message": "প্রোফাইল পিকচার আপলোড হয়েছে!", "has_profile_picture": True}
 
-
-# 🖼️ কৃষকের প্রোফাইল পিকচার serve করা (binary response)
 @router.get("/profile-picture/{farmer_id}")
 def serve_farmer_profile_picture(farmer_id: int, db: Session = Depends(get_db)):
     farmer = db.query(User).filter(
@@ -274,7 +259,6 @@ def serve_farmer_profile_picture(farmer_id: int, db: Session = Depends(get_db)):
         }
     )
 
-# 🔔 কৃষকের নোটিফিকেশনগুলো দেখা
 @router.get("/notifications", response_model=list[NotificationResponse])
 def get_farmer_notifications(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("user_id")
@@ -287,7 +271,6 @@ def get_farmer_notifications(db: Session = Depends(get_db), current_user: dict =
     
     return notifications
 
-# 🔔 নোটিফিকেশন read মার্ক করা
 @router.put("/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("user_id")
@@ -299,7 +282,6 @@ def mark_notification_read(notification_id: int, db: Session = Depends(get_db), 
     db.commit()
     return {"message": "Notification marked as read"}
 
-# 🗑️ নোটিফিকেশন ডিলিট করা
 @router.delete("/notifications/{notification_id}")
 def delete_farmer_notification(notification_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("user_id")

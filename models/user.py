@@ -31,17 +31,16 @@ class User(Base):
 
     # user location
     address = Column(String, nullable=True)
-    latitude = Column(String, nullable=True)      # অক্ষাংশ (ম্যাপের জন্য)
-    longitude = Column(String, nullable=True)     # দ্রাঘিমাংশ (ম্যাপের জন্য)
+    latitude = Column(String, nullable=True)   
+    longitude = Column(String, nullable=True)     
 
-    # প্রোফাইল পিকচার — binary data সরাসরি DB তে (product image এর মতো)
+   
     profile_picture_data = Column(LargeBinary, nullable=True)
-    profile_picture_type = Column(String, nullable=True)  # MIME type, যেমন image/webp
+    profile_picture_type = Column(String, nullable=True)  
 
-    # অ্যাকাউন্ট তৈরির সময় সংরক্ষণ করা হবে (অটো-জেনারেটেড)
+   
     created_at = Column(DateTime, server_default=func.now())
 
-    # রিলেশনশিপ (এক ইউজারের একাধিক প্রোডাক্ট ও অর্ডার থাকতে পারে, ইউজার ডিলিট হলে এগুলোও ডিলিট হবে)
     products = relationship("Product", back_populates="farmer", cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="customer", cascade="all, delete-orphan")
 

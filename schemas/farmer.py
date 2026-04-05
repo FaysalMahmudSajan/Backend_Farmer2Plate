@@ -32,7 +32,7 @@ class FarmerResponse(BaseModel):
     farm_address: Optional[str] = None
     latitude: Optional[str] = None
     longitude: Optional[str] = None
-    has_profile_picture: bool = False  # binary data আছে কিনা
+    has_profile_picture: bool = False  
 
     class Config:
         from_attributes = True

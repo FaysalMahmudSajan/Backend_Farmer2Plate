@@ -15,9 +15,8 @@ from core.security import hash_password, verify_password, create_access_token, g
 from core.config import settings
 from core.email_helper import send_otp_email, generate_otp
 
-# প্রোফাইল পিকচার compress করার সেটিং (product image এর মতো)
-MAX_AVATAR_SIZE = 400   # Max width/height pixels
-WEBP_QUALITY   = 82     # WebP compression quality
+MAX_AVATAR_SIZE = 400   
+WEBP_QUALITY   = 82     
 
 def compress_avatar(file_bytes: bytes) -> bytes:
     """Avatar image কে WebP এ compress করা"""
@@ -39,22 +38,16 @@ def compress_avatar(file_bytes: bytes) -> bytes:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"ছবি প্রসেস করতে সমস্যা: {str(e)}")
 
-
-# কাস্টমারের জন্য API গুচ্ছের রাউটার
 router = APIRouter(prefix="/customer", tags=["Customer"])
 
-
-# Send OTP to email before register
 @router.post("/request-otp")
 def request_otp(data: RequestOTP, db: Session = Depends(get_db)):
-    # Check if email is already in use
     existing_user = db.query(User).filter(User.email == data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="ইমেইল ইতিমধ্যে রেজিস্টার করা হয়েছে!")
     
     otp = generate_otp()
     
-    # Store OTP temporarily in OTPRecord table
     otp_record = db.query(OTPRecord).filter(OTPRecord.email == data.email).first()
     if otp_record:
         otp_record.otp_code = otp
@@ -108,7 +101,6 @@ def register_customer(data: CustomerRegister, db: Session = Depends(get_db)):
     return {"message": "সফলভাবে রেজিস্ট্রেশন সম্পন্ন হয়েছে! এখন লগইন করুন।"}
 
 
-# ✅ কাস্টমার লগইন (JWT)
 @router.post("/login")
 def login_customer(data: CustomerLogin, db: Session = Depends(get_db)):
     customer = db.query(User).filter(
@@ -125,7 +117,6 @@ def login_customer(data: CustomerLogin, db: Session = Depends(get_db)):
     if not customer.is_active:
         raise HTTPException(status_code=403, detail="এই অ্যাকাউন্টটি নিষ্ক্রিয় করা হয়েছে। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন।")
 
-    # সফল হলে টোকেন তৈরি করা
     token = create_access_token(
         data={"user_id": customer.id, "role": customer.role}
     )
@@ -135,8 +126,6 @@ def login_customer(data: CustomerLogin, db: Session = Depends(get_db)):
         "token_type": "bearer"
     }
 
-
-# ✅ কাস্টমারের প্রোফাইল ডাটা রিড করা
 @router.get("/profile/{customer_id}", response_model=CustomerResponse)
 def get_customer(customer_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != customer_id and current_user.get("role") != "admin":
@@ -150,13 +139,10 @@ def get_customer(customer_id: int, db: Session = Depends(get_db), current_user: 
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # has_profile_picture manually set করা
     resp = CustomerResponse.model_validate(customer)
     resp.has_profile_picture = bool(customer.profile_picture_data)
     return resp
 
-
-# ✅ কাস্টমারের প্রোফাইল আপডেট করা
 @router.put("/update/{customer_id}", response_model=CustomerResponse)
 def update_customer(customer_id: int, data: CustomerUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != customer_id and current_user.get("role") != "admin":
@@ -170,7 +156,6 @@ def update_customer(customer_id: int, data: CustomerUpdate, db: Session = Depend
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # রিকোয়েস্টে যে ভ্যালুগুলো দেওয়া হয়েছে শুধুমাত্র সেগুলোই আপডেট করা
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(customer, key, value)
 
@@ -181,8 +166,6 @@ def update_customer(customer_id: int, data: CustomerUpdate, db: Session = Depend
     resp.has_profile_picture = bool(customer.profile_picture_data)
     return resp
 
-
-# ❌ কাস্টমারের অ্যাকাউন্ট ডিলিট করা
 @router.delete("/delete/{customer_id}")
 def delete_customer(customer_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != customer_id and current_user.get("role") != "admin":
@@ -201,8 +184,6 @@ def delete_customer(customer_id: int, db: Session = Depends(get_db), current_use
 
     return {"message": "Customer deleted"}
 
-
-# 📷 কাস্টমারের প্রোফাইল পিকচার আপলোড — binary DB storage (product image এর মতো)
 @router.post("/profile-picture/{customer_id}")
 async def upload_customer_profile_picture(
     customer_id: int,
@@ -221,18 +202,15 @@ async def upload_customer_profile_picture(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # ফাইল টাইপ ভ্যালিডেশন
     allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"}
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="শুধু JPEG, PNG, WebP, GIF অথবা BMP ফাইল আপলোড করতে পারবেন!")
 
     file_bytes = await file.read()
 
-    # ৫MB সীমা
     if len(file_bytes) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="ছবি সর্বোচ্চ ৫MB হতে পারবে!")
 
-    # PIL দিয়ে compress + WebP convert (product image এর মতো)
     compressed = compress_avatar(file_bytes)
 
     customer.profile_picture_data = compressed
@@ -241,8 +219,6 @@ async def upload_customer_profile_picture(
 
     return {"message": "প্রোফাইল পিকচার আপলোড হয়েছে!", "has_profile_picture": True}
 
-
-# 🖼️ কাস্টমারের প্রোফাইল পিকচার serve করা (product image এর মতো binary response)
 @router.get("/profile-picture/{customer_id}")
 def serve_customer_profile_picture(customer_id: int, db: Session = Depends(get_db)):
     customer = db.query(User).filter(
@@ -262,7 +238,6 @@ def serve_customer_profile_picture(customer_id: int, db: Session = Depends(get_d
         }
     )
 
-# 🔔 ক্রেতার নোটিফিকেশনগুলো দেখা
 @router.get("/notifications", response_model=list[NotificationResponse])
 def get_customer_notifications(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("user_id")
@@ -275,7 +250,6 @@ def get_customer_notifications(db: Session = Depends(get_db), current_user: dict
     
     return notifications
 
-# 🔔 নোটিফিকেশন read মার্ক করা
 @router.put("/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("user_id")
@@ -287,7 +261,6 @@ def mark_notification_read(notification_id: int, db: Session = Depends(get_db), 
     db.commit()
     return {"message": "Notification marked as read"}
 
-# 🗑️ নোটিফিকেশন ডিলিট করা
 @router.delete("/notifications/{notification_id}")
 def delete_customer_notification(notification_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("user_id")
