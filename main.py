@@ -25,3 +25,8 @@ app.include_router(order.router)
 @app.get("/")
 def root():
     return {"message": "Farm2Plane (Fatir)"}
+
+
+@app.get("/maker")
+def root():
+    return {"message": "Faysal Mahmud (https://www.linkedin.com/in/faysalmahmudsajan/)"}
