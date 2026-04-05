@@ -1,14 +1,41 @@
 # routers/farmer.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from io import BytesIO
+from PIL import Image
 
 from database.db import get_db
 from models.user import User, UserRole, OTPRecord
+from models.notification import Notification
 from schemas.farmer import FarmerRegister, FarmerLogin, FarmerResponse, FarmerUpdate, RequestOTP
+from schemas.notification import NotificationResponse
 from core.security import hash_password, verify_password, create_access_token, get_current_user
 from core.config import settings
 from core.email_helper import send_otp_email, generate_otp
+
+MAX_AVATAR_SIZE = 400
+WEBP_QUALITY   = 82
+
+def compress_avatar(file_bytes: bytes) -> bytes:
+    """Avatar image কে WebP এ compress করা"""
+    try:
+        img = Image.open(BytesIO(file_bytes))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        w, h = img.size
+        min_side = min(w, h)
+        left = (w - min_side) // 2
+        top  = (h - min_side) // 2
+        img = img.crop((left, top, left + min_side, top + min_side))
+        img = img.resize((MAX_AVATAR_SIZE, MAX_AVATAR_SIZE), Image.Resampling.LANCZOS)
+        output = BytesIO()
+        img.save(output, format="WEBP", quality=WEBP_QUALITY, optimize=True)
+        return output.getvalue()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"ছবি প্রসেস করতে সমস্যা: {str(e)}")
+
 
 # farmer related API
 router = APIRouter(prefix="/farmer", tags=["Farmer"])
@@ -38,7 +65,7 @@ def request_otp(data: RequestOTP, db: Session = Depends(get_db)):
         send_otp_email(data.email, otp)
     except Exception as e:
         print(f"Email error: {e}")
-        raise HTTPException(status_code=500, detail="ইমেইল পাঠাতে সমস্যা হয়েছে!")
+        raise HTTPException(status_code=500, detail="ইমেইল পাঠাতে সমস্যা হয়েছে!")
         
     return {"message": "আপনার ইমেইলে ৫-ডিজিটের ভেরিফিকেশন কোড পাঠানো হয়েছে।"}
 
@@ -76,7 +103,7 @@ def register_farmer(data: FarmerRegister, db: Session = Depends(get_db)):
     db.delete(otp_record)
     db.commit()
     
-    return {"message": "সফলভাবে রেজিস্ট্রেশন সম্পন্ন হয়েছে! এখন লগইন করুন।"}
+    return {"message": "সফলভাবে রেজিস্ট্রেশন সম্পন্ন হয়েছে! এখন লগইন করুন।"}
 
 @router.post("/login")
 def login_farmer(data: FarmerLogin, db: Session = Depends(get_db)):
@@ -102,7 +129,7 @@ def login_farmer(data: FarmerLogin, db: Session = Depends(get_db)):
 
     # check if email is verified
     if not farmer.is_verified:
-        raise HTTPException(status_code=403, detail="ইমেইল ভেরিফাই করা হয়নি। অনুগ্রহ করে ইমেইলে পাঠানো কোড দিয়ে আগে অ্যাকাউন্ট ভেরিফাই করুন।")
+        raise HTTPException(status_code=403, detail="ইমেইল ভেরিফাই করা হয়নি। অনুগ্রহ করে ইমেইলে পাঠানো কোড দিয়ে আগে অ্যাকাউন্ট ভেরিফাই করুন।")
 
     # if the farmer account is inactive
     if not farmer.is_active:
@@ -133,10 +160,10 @@ def get_farmer(farmer_id: int, db: Session = Depends(get_db), current_user: dict
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
 
-    return farmer
+    resp = FarmerResponse.model_validate(farmer)
+    resp.has_profile_picture = bool(farmer.profile_picture_data)
+    return resp
 
-
-# ✅ কৃষকের প্রোফাইল ডাটা আপডেট করা
 @router.put("/update/{farmer_id}", response_model=FarmerResponse)
 def update_farmer(farmer_id: int, data: FarmerUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != farmer_id and current_user.get("role") != "admin":
@@ -150,17 +177,16 @@ def update_farmer(farmer_id: int, data: FarmerUpdate, db: Session = Depends(get_
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
 
-    # রিকোয়েস্ট বডিতে শুধু যেসব ভ্যালু দেওয়া হয়েছে সেগুলোই আপডেট করা
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(farmer, key, value)
 
     db.commit()
     db.refresh(farmer)
 
-    return farmer
+    resp = FarmerResponse.model_validate(farmer)
+    resp.has_profile_picture = bool(farmer.profile_picture_data)
+    return resp
 
-
-# ❌ কৃষকের অ্যাকাউন্ট পারমানেন্টলি ডিলিট করা
 @router.delete("/delete/{farmer_id}")
 def delete_farmer(farmer_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if current_user.get("user_id") != farmer_id and current_user.get("role") != "admin":
@@ -178,3 +204,91 @@ def delete_farmer(farmer_id: int, db: Session = Depends(get_db), current_user: d
     db.commit()
 
     return {"message": "Farmer deleted"}
+
+@router.post("/profile-picture/{farmer_id}")
+async def upload_farmer_profile_picture(
+    farmer_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("user_id") != farmer_id and current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    farmer = db.query(User).filter(
+        User.id == farmer_id,
+        User.role == UserRole.farmer
+    ).first()
+
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
+
+    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="শুধু JPEG, PNG, WebP, GIF অথবা BMP ফাইল আপলোড করতে পারবেন!")
+
+    file_bytes = await file.read()
+
+    if len(file_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="ছবি সর্বোচ্চ ৫MB হতে পারবে!")
+
+    compressed = compress_avatar(file_bytes)
+
+    farmer.profile_picture_data = compressed
+    farmer.profile_picture_type = "image/webp"
+    db.commit()
+
+    return {"message": "প্রোফাইল পিকচার আপলোড হয়েছে!", "has_profile_picture": True}
+
+@router.get("/profile-picture/{farmer_id}")
+def serve_farmer_profile_picture(farmer_id: int, db: Session = Depends(get_db)):
+    farmer = db.query(User).filter(
+        User.id == farmer_id,
+        User.role == UserRole.farmer
+    ).first()
+
+    if not farmer or not farmer.profile_picture_data:
+        raise HTTPException(status_code=404, detail="Profile picture not found")
+
+    return Response(
+        content=farmer.profile_picture_data,
+        media_type=farmer.profile_picture_type or "image/webp",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'inline; filename="avatar_{farmer_id}.webp"'
+        }
+    )
+
+@router.get("/notifications", response_model=list[NotificationResponse])
+def get_farmer_notifications(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    
+    notifications = db.query(Notification).filter(
+        Notification.user_id == user_id
+    ).order_by(Notification.created_at.desc()).all()
+    
+    return notifications
+
+@router.put("/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("user_id")
+    notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == user_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    notif.is_read = True
+    db.commit()
+    return {"message": "Notification marked as read"}
+
+@router.delete("/notifications/{notification_id}")
+def delete_farmer_notification(notification_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("user_id")
+    notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == user_id).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    db.delete(notif)
+    db.commit()
+    return {"message": "Notification deleted"}
